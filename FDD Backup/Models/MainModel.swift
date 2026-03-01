@@ -72,33 +72,34 @@ class MainModel: NSObject, ORSSerialPortDelegate {
         } while true
     }
     
-    func connect(serialPort: ORSSerialPort) {
+    func connect(serialPort: ORSSerialPort, baudRate: SerialPortSpeed, parity: ORSSerialPortParity, stopBits: StopBits, dataBits: DataBits) {
         self.serialPort = serialPort
         serialPort.delegate = self
-        serialPort.baudRate = 19200
+        serialPort.baudRate = baudRate.bps as NSNumber
         serialPort.usesRTSCTSFlowControl = true
         serialPort.usesDTRDSRFlowControl = true
         serialPort.usesDCDOutputFlowControl = false
-        serialPort.numberOfDataBits = 8
-        serialPort.numberOfStopBits = 1
-        serialPort.parity = .even
+        serialPort.numberOfDataBits = UInt(dataBits.dataBits)
+        serialPort.numberOfStopBits = UInt(stopBits.stopBits)
+        serialPort.parity = parity
         serialPort.open()
-        
+    }
+    
+    func disconnect() {
+        self.serialPort?.close()
+        self.serialPort = nil
+        self.dataReceiver.reset()
     }
     
     func serialPortWasRemovedFromSystem(_ serialPort: ORSSerialPort) {
         if self.serialPort == serialPort {
-            serialPort.close()
-            self.serialPort = nil
-            self.dataReceiver.reset()
+            disconnect()
         }
     }
     
     func serialPort(_ serialPort: ORSSerialPort, didEncounterError error: any Error) {
         print(error)
-        serialPort.close()
-        self.serialPort = nil
-        self.dataReceiver.reset()
+        disconnect()
     }
     
     func serialPort(_ serialPort: ORSSerialPort, didReceive data: Data) {

@@ -18,7 +18,7 @@ struct FileTable: View {
             }
             
             TableColumn("Type") { file in
-                Text(file.wrappedValue.receivedFile.metadata.fileType.localizedDescription)
+                Text(file.wrappedValue.receivedFile.metadata.fileTypeLocalizedDescription)
             }
             
             TableColumn("Size") { file in

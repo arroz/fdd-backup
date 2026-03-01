@@ -68,6 +68,8 @@ class DataReceiver {
         
         func tapHeaderData(named name: String) -> Data
         var specificHeaderData: Data { get }
+        
+        var fileTypeLocalizedDescription: String { get }
     }
     
     struct ProgramMetadata: FileMetadata {
@@ -125,6 +127,16 @@ class DataReceiver {
                 startAddress.littleEndianData +
                 UInt16(32768).littleEndianData // Unused
             )
+        }
+        
+        var fileTypeLocalizedDescription: String {
+            if startAddress == 16384 && dataLength == 6912 {
+                return String(localized: "Bytes (screen)")
+            } else if startAddress == 16384 {
+                return String(localized: "Bytes (screen-ish)")
+            } else {
+                return fileType.localizedDescription
+            }
         }
     }
     
@@ -320,7 +332,7 @@ class DataReceiver {
             .send(
                 Progress(
                     progressValue: .value(min(buffer.count - metadata.headerSize, Int(metadata.dataLength)), of: Int(metadata.dataLength)),
-                    description: String(localized: "Receiving \(metadata.fileType.localizedDescription)")))
+                    description: String(localized: "Receiving \(metadata.fileTypeLocalizedDescription)")))
         
         guard buffer.count >= metadata.expectedRawSize else {
             return true // We don't have the full file yet, wait
@@ -391,5 +403,9 @@ extension DataReceiver.FileMetadata {
         result.append(result[result.startIndex.advanced(by: 2)..<result.endIndex].checksum)
         
         return result
+    }
+    
+    var fileTypeLocalizedDescription: String {
+        fileType.localizedDescription
     }
 }

@@ -21,8 +21,12 @@ struct ContentView: View {
     var body: some View {
         WithErrorAlert { errorProxy in
             VStack(alignment: .leading, spacing: 0) {
-                SerialPortControlView(model: model)
-                    .padding()
+                GroupBox {
+                        SerialPortControlView(model: model)
+                            .padding()
+                     
+                }
+                .padding()
                 
                 DataProgressView(model: model)
                     .padding()

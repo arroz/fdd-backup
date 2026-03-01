@@ -113,6 +113,21 @@ class DataReceiver {
         }
     }
     
+    struct BytesMetadata: FileMetadata {
+        var fileType: FileType { .bytes }
+        
+        let dataLength: UInt16
+        let startAddress: UInt16
+        
+        var specificHeaderData: Data {
+            return Data(
+                dataLength.littleEndianData +
+                startAddress.littleEndianData +
+                UInt16(32768).littleEndianData // Unused
+            )
+        }
+    }
+    
     enum Status {
         case waiting
         case receiving(FileMetadata)
@@ -204,7 +219,7 @@ class DataReceiver {
             case .program: return processProgram()
             case .numericArray: return processArray()
             case .alphanumericArray: return processArray()
-            case .bytes: fatalError()
+            case .bytes: return processBytes()
             }
         } while done == false
         
@@ -272,6 +287,32 @@ class DataReceiver {
         status = .receiving(ArrayMetadata(fileType: type, fullLength: fullLength, address: address, dataLength: dataLength))
         
         return false
+    }
+    
+    private func processBytes() -> Bool {
+        /*
+         The bytes file header sent by the FDD has 6 bytes (2 bytes shorter than all the other types)
+         in the following structure:
+         
+         +----+----+----+----+----+----+
+         | 00 | 03 |  data   | address |
+         |    |    |  length |         |
+         +----+----+----+----+----+----+
+         
+          ^^^^ -> Initial header mark, already processed
+               ^^^^ -> File type
+         */
+        
+        guard buffer.count >= 6 else {
+            return true // The full header has not arrived yet, wait
+        }
+        
+        let dataLength = UInt16(fromDataInLittleEndian: buffer.suffix(from: buffer.startIndex.advanced(by: 2)))
+        let startAddress = UInt16(fromDataInLittleEndian: buffer.suffix(from: buffer.startIndex.advanced(by: 4)))
+        
+        status = .receiving(BytesMetadata(dataLength: dataLength, startAddress: startAddress))
+        
+        return true
     }
     
     private func processContent(for metadata: FileMetadata) -> Bool {

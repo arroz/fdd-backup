@@ -51,6 +51,13 @@ class DataReceiver {
             case .bytes: String(localized: "Bytes")
             }
         }
+        
+        var isArray: Bool {
+            switch self {
+            case .numericArray, .alphanumericArray: true
+            case .program, .bytes: false
+            }
+        }
     }
     
     protocol FileMetadata {
@@ -76,6 +83,33 @@ class DataReceiver {
                 autoStart.littleEndianData +
                 programLength.littleEndianData
             )
+        }
+    }
+    
+    struct ArrayMetadata: FileMetadata {
+        let fileType: FileType // Must be .numericArray or .alphanumericArray
+        
+        let fullLength: UInt16
+        let address: UInt16
+        let dataLength: UInt16
+        
+        var specificHeaderData: Data {
+            return Data(
+                dataLength.littleEndianData +
+                UInt8(0).littleEndianData +
+                UInt8(fileType == .numericArray ? 129 : 193).littleEndianData + // Hack, we always use var name
+                // a or $a. Does not matter really since the user always needs to specify the var name on LOAD.
+                UInt16(32768).littleEndianData // Unused
+            )
+        }
+        
+        init(fileType: FileType, fullLength: UInt16, address: UInt16, dataLength: UInt16) {
+            guard fileType.isArray else { fatalError() }
+            
+            self.fileType = fileType
+            self.fullLength = fullLength
+            self.address = address
+            self.dataLength = dataLength
         }
     }
     
@@ -168,8 +202,8 @@ class DataReceiver {
             
             switch fileType {
             case .program: return processProgram()
-            case .numericArray: fatalError()
-            case .alphanumericArray: fatalError()
+            case .numericArray: return processArray()
+            case .alphanumericArray: return processArray()
             case .bytes: fatalError()
             }
         } while done == false
@@ -208,8 +242,44 @@ class DataReceiver {
         return false
     }
     
+    private func processArray() -> Bool {
+        /*
+         The array file header (both alphanumeric and numeric) sent by the FDD has 8 bytes in the following structure:
+         
+         +----+----+----+----+----+----+----+----+
+         | 00 | xx |  full   | address |  array  |
+         |    |    |  length |         |  length |
+         +----+----+----+----+----+----+----+----+
+         
+          ^^^^ -> Initial header mark, already processed
+               ^^^^ -> File type, 01 for numeric array, 02 for alphanumeric array
+         
+         The address is not used on tape files.
+         Full length = array length + 2
+         */
+        
+        guard buffer.count >= 8 else {
+            return true // The full header has not arrived yet, wait
+        }
+        
+        guard let type = FileType(rawValue: UInt8(fromDataInLittleEndian: buffer.suffix(from: buffer.startIndex.advanced(by: 1)))) else {
+            fatalError()
+        }
+        let fullLength = UInt16(fromDataInLittleEndian: buffer.suffix(from: buffer.startIndex.advanced(by: 2)))
+        let address = UInt16(fromDataInLittleEndian: buffer.suffix(from: buffer.startIndex.advanced(by: 4)))
+        let dataLength = UInt16(fromDataInLittleEndian: buffer.suffix(from: buffer.startIndex.advanced(by: 6)))
+        
+        status = .receiving(ArrayMetadata(fileType: type, fullLength: fullLength, address: address, dataLength: dataLength))
+        
+        return false
+    }
+    
     private func processContent(for metadata: FileMetadata) -> Bool {
-        progressPublisher.send(Progress(progressValue: .value(min(buffer.count - metadata.headerSize, Int(metadata.dataLength)), of: Int(metadata.dataLength)), description: String(localized: "Receiving \(metadata.fileType.localizedDescription)")))
+        progressPublisher
+            .send(
+                Progress(
+                    progressValue: .value(min(buffer.count - metadata.headerSize, Int(metadata.dataLength)), of: Int(metadata.dataLength)),
+                    description: String(localized: "Receiving \(metadata.fileType.localizedDescription)")))
         
         guard buffer.count >= metadata.expectedRawSize else {
             return true // We don't have the full file yet, wait
@@ -231,6 +301,9 @@ class DataReceiver {
         var done = false
         
         repeat {
+            
+//            print("Buffer: \(buffer.map { String(format:"%02X", $0) }.joined(separator: " "))")
+            
             switch status {
             case .waiting:
                 done = processInitialData()
@@ -269,7 +342,6 @@ extension DataReceiver.FileMetadata {
         // Loading flag
         result.append(00)
         
-        // Force program type for now
         result.append(fileType.rawValue)
         result.append(contentsOf: tapeName)
         

@@ -15,22 +15,31 @@ struct DataProgressView: View {
     var body: some View {
         VStack(alignment: .leading) {
             if model.serialPort != nil {
-                if case let .value(current, of: total) = progress.progressValue {
-                    ProgressView(value: Double(current), total: Double(total))
-                } else {
-                    ProgressView()
-                }
-                
-                HStack {
-                    Text(progress.description)
-                    if case let .value(current, of: total) = progress.progressValue {
-                        Spacer()
-                        Text("\(current)/\(total) bytes")
-                            .monospacedDigit()
+                VStack {
+                    HStack {
+                        if case let .value(current, of: total) = progress.progressValue {
+                            ProgressView(value: Double(current), total: Double(total))
+                        } else {
+                            ProgressView()
+                        }
+                        
+                        Button("Reset Buffer") {
+                            model.resetDataReceiver()
+                        }
+                        .disabled(model.dataReceiver.status.isWaiting)
                     }
+                    
+                    HStack {
+                        Text(progress.description)
+                        if case let .value(current, of: total) = progress.progressValue {
+                            Spacer()
+                            Text("\(current)/\(total) bytes")
+                                .monospacedDigit()
+                        }
+                    }
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
                 }
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity)
             } else {
                 Text("Serial Port not connected.")
                     .foregroundStyle(.secondary)

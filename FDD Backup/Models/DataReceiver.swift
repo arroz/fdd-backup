@@ -143,6 +143,13 @@ class DataReceiver {
     enum Status {
         case waiting
         case receiving(FileMetadata)
+        
+        var isWaiting: Bool {
+            switch self {
+            case .waiting: true
+            case .receiving: false
+            }
+        }
     }
     
     struct CompleteFile {

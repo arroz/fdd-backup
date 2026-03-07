@@ -44,6 +44,7 @@ struct SerialPortControlView: View {
             }
             .padding(.trailing, 8)
             .fixedSize(horizontal: true, vertical: true)
+            .disabled(model.serialPort != nil)
             
             if model.serialPort != nil {
                 Button("Disconnect") {

@@ -116,7 +116,11 @@ class MainModel: NSObject, ORSSerialPortDelegate {
         case repeatedNames
     }
     
-    func saveFiles(to baseUrl: URL) throws {
+    struct FileSaveResult {
+        let filesWithErrors: [File: Error]
+    }
+    
+    func saveFiles(to baseUrl: URL) throws -> FileSaveResult {
         let fileNames = Set(files.map { $0.name })
         if fileNames.count != files.count {
             throw FileSaveError.repeatedNames
@@ -126,10 +130,12 @@ class MainModel: NSObject, ORSSerialPortDelegate {
         
         func createDirIfNeeded(at dirUrl: URL, notDirectoryError: FileSaveError) throws {
             var isDirectory: ObjCBool = true
-            let dirExists = fileManager.fileExists(atPath: dirUrl.path(), isDirectory: &isDirectory)
+            let dirExists = fileManager.fileExists(atPath: dirUrl.path(percentEncoded: false), isDirectory: &isDirectory)
             if dirExists {
                 if isDirectory.boolValue == false {
                     throw notDirectoryError
+                } else {
+                    return
                 }
             } else {
                 try fileManager.createDirectory(at: dirUrl, withIntermediateDirectories: false)
@@ -142,10 +148,69 @@ class MainModel: NSObject, ORSSerialPortDelegate {
         try createDirIfNeeded(at: tapesURL, notDirectoryError: .tapesFileIsNotDirectory)
         try createDirIfNeeded(at: originalsURL, notDirectoryError: .originalsFileIsNotDirectory)
         
-        try files.forEach { file in
-            try file.receivedFile.rawData.write(to: originalsURL.appendingPathComponent("\(file.name).data"))
-            try file.receivedFile.tapData(named: file.name).write(to: tapesURL.appendingPathComponent("\(file.name).tap"))
+        var filesWithErrors = [File: Error]()
+        
+        files.forEach { file in
+            do {
+                let actualFileName = try fileNameFor(file: file, tapesDir: tapesURL, originalsDir: originalsURL)
+                try file.receivedFile.rawData.write(to: urlForOriginal(originalsDir: originalsURL, fileName: actualFileName))
+                try file.receivedFile.tapData(named: file.name).write(to: urlForTape(tapesDir: tapesURL, fileName: actualFileName))
+            } catch let error {
+                filesWithErrors[file] = error
+            }
         }
+        
+        let filesWithErrorsKeys = filesWithErrors.keys
+        self.files = files.filter { filesWithErrorsKeys.contains($0) }
+        
+        return FileSaveResult(filesWithErrors: filesWithErrors)
+    }
+    
+    private func urlForTape(tapesDir: URL, fileName: String) -> URL {
+        tapesDir.appendingPathComponent("\(fileName).tap")
+    }
+    
+    private func urlForOriginal(originalsDir: URL, fileName: String) -> URL {
+        originalsDir.appendingPathComponent("\(fileName).data")
+    }
+    
+    struct FileNameIterator: IteratorProtocol {
+        let originalFileName: String
+        
+        var value = 0
+        
+        mutating func next() -> String? {
+            defer { value += 1 }
+            
+            if value == 0 {
+                return originalFileName
+            } else {
+                return "\(originalFileName)-\(value)"
+            }
+        }
+    }
+    
+    struct FileNameSequence: LazySequenceProtocol {
+        let originalFileName: String
+        
+        func makeIterator() -> FileNameIterator {
+            FileNameIterator(originalFileName: originalFileName)
+        }
+    }
+    
+    private func fileNameFor(file: File, tapesDir: URL, originalsDir: URL) throws -> String {
+        let fileManager = FileManager.default
+        
+        for possibleName in FileNameSequence(originalFileName: file.name) {
+            let fileExists = fileManager.fileExists(atPath: urlForOriginal(originalsDir: originalsDir, fileName: possibleName).path(percentEncoded: false)) ||
+                             fileManager.fileExists(atPath: urlForTape(tapesDir: tapesDir, fileName: possibleName).path(percentEncoded: false))
+            
+            if fileExists == false {
+                return possibleName
+            }
+        }
+        
+        return file.name // Should never happen, the sequence is "infinite" (well, until "FileName-Int.max").
     }
     
 }
